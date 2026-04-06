@@ -649,7 +649,7 @@ Get all KPI data for the dashboard in one request.
   "total_stores": 5,
   "total_products": 48,
   "low_stock_count": 6,
-  "recent_orders_count": 23,
+  "today_orders_count": 23,
   "top_products": [
     { "product_id": 1, "product_name": "Coca Cola 330ml", "total_sold": 320 },
     { "product_id": 3, "product_name": "Red Bull 250ml", "total_sold": 210 }
