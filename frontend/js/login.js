@@ -3,7 +3,6 @@ document.getElementById('loginForm').addEventListener('submit', function(event) 
 
     const emailInput = document.getElementById('email').value;
     const passwordInput = document.getElementById('password').value;
-    
     const errorMessage = document.getElementById('errorMessage');
 
     const demoEmail = "demo";
@@ -11,10 +10,11 @@ document.getElementById('loginForm').addEventListener('submit', function(event) 
     
     if (emailInput === demoEmail && passwordInput === demoPassword) {
         errorMessage.style.display = 'none';
+
+        localStorage.setItem('token', 'fake-jwt-token-for-demo');
         window.location.href = 'dashboard.html';
         
     } else {
         errorMessage.style.display = 'block';
-        
     }
 });
