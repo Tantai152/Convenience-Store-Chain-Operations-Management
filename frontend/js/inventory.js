@@ -1,13 +1,11 @@
 document.addEventListener('DOMContentLoaded', function() {
-    // 1. KIỂM TRA BẢO MẬT (Auth Guard)
     const token = localStorage.getItem('token');
     if (!token) {
         window.location.href = 'index.html';
         return;
     }
 
-    // --- HÀM HỖ TRỢ (Helper Functions) ---
-    // Hàm này giúp tính toán Badge dựa trên số lượng tồn kho (Dùng chung cho Phase 4)
+    
     function getBadgeStatus(stock, threshold) {
         if (stock === 0) {
             return `<span class="badge bg-danger">Critical</span>`;
@@ -18,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // 2. LOGIC TÌM KIẾM (Search)
+    
     const searchInput = document.getElementById('searchProduct');
     if (searchInput) {
         searchInput.addEventListener('input', function() {
@@ -32,14 +30,14 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 3. LOGIC NHẬP HÀNG (Restock)
+    
     let currentRowToRestock = null;
 
-    // Sử dụng Event Delegation để bắt sự kiện click trúng nút Restock
+    
     document.getElementById('inventoryTableBody').addEventListener('click', function(e) {
         if (e.target.classList.contains('btn-outline-warning')) {
             currentRowToRestock = e.target.closest('tr');
-            // Reset ô nhập liệu trong modal mỗi khi mở
+            
             document.getElementById('restockAmount').value = "";
         }
     });
@@ -56,18 +54,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 const newStock = parseInt(stockCell.textContent) + amountToAdd;
                 
-                // Cập nhật giao diện
+                
                 stockCell.textContent = newStock;
                 currentRowToRestock.cells[4].innerHTML = getBadgeStatus(newStock, threshold);
 
-                // Đóng Modal
+               
                 restockForm.reset();
                 bootstrap.Modal.getInstance(document.getElementById('restockModal')).hide();
             }
         });
     }
 
-    // 4. LOGIC THÊM SẢN PHẨM MỚI (Add Product)
+    
     const addProductForm = document.getElementById('addProductForm');
     if (addProductForm) {
         addProductForm.addEventListener('submit', function(event) {
@@ -80,7 +78,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const badgeHtml = getBadgeStatus(stock, threshold);
 
-            // FIX LỖI: Thêm thuộc tính data-bs để nút bấm của dòng mới có thể mở được Modal
+            
             const newRow = `
                 <tr>
                     <td>${name}</td>
@@ -95,16 +93,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 </tr>
             `;
 
-            // Dùng insertAdjacentHTML thay vì innerHTML += để giữ hiệu suất ổn định
+            
             document.getElementById('inventoryTableBody').insertAdjacentHTML('beforeend', newRow);
 
-            // Reset và đóng Modal
+            
             addProductForm.reset();
             bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
         });
     }
 
-    // 5. XỬ LÝ LOGOUT
     document.getElementById('logoutBtn')?.addEventListener('click', function() {
         localStorage.removeItem('token');
         window.location.href = 'index.html';
