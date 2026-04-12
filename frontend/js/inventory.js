@@ -5,24 +5,58 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    
-    function getBadgeStatus(stock, threshold) {
-        if (stock === 0) {
-            return `<span class="badge bg-danger">Critical</span>`;
-        } else if (stock <= threshold) {
-            return `<span class="badge bg-warning text-dark">Low Stock</span>`;
-        } else {
-            return `<span class="badge bg-success">OK</span>`;
+    const inventoryTableBody = document.getElementById('inventoryTableBody');
+    const searchInput = document.getElementById('searchProduct');
+    let currentRowId = null; 
+
+    function getBadgeStatus(status) {
+        const mapping = {
+            'ok': 'bg-success',
+            'low': 'bg-warning text-dark',
+            'critical': 'bg-danger'
+        };
+        return `<span class="badge ${mapping[status] || 'bg-secondary'}">${status.toUpperCase()}</span>`;
+    }
+
+    async function loadProducts() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/products`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const products = await response.json();
+                renderTable(products);
+            }
+        } catch (error) {
+            console.error('Không thể kết nối server:', error);
         }
     }
 
-    
-    const searchInput = document.getElementById('searchProduct');
+    function renderTable(products) {
+        inventoryTableBody.innerHTML = products.map(product => `
+            <tr data-id="${product.id}">
+                <td>${product.name}</td>
+                <td>${product.category}</td>
+                <td class="fw-bold">${product.current_stock}</td>
+                <td style="display:none">${product.stock_threshold}</td>
+                <td>${getBadgeStatus(product.stock_status)}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-warning" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#restockModal">Restock</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
     if (searchInput) {
         searchInput.addEventListener('input', function() {
             const filter = this.value.toLowerCase();
             const rows = document.querySelectorAll('#inventoryTableBody tr');
-
             rows.forEach(row => {
                 const productName = row.cells[0].textContent.toLowerCase();
                 row.style.display = productName.includes(filter) ? "" : "none";
@@ -30,75 +64,72 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    
-    let currentRowToRestock = null;
-
-    
     document.getElementById('inventoryTableBody').addEventListener('click', function(e) {
         if (e.target.classList.contains('btn-outline-warning')) {
-            currentRowToRestock = e.target.closest('tr');
-            
+            const row = e.target.closest('tr');
+            currentRowId = row.getAttribute('data-id'); // Lấy ID sản phẩm
             document.getElementById('restockAmount').value = "";
         }
     });
 
     const restockForm = document.getElementById('restockForm');
     if (restockForm) {
-        restockForm.addEventListener('submit', function(e) {
+        restockForm.addEventListener('submit', async function(e) {
             e.preventDefault();
+            const quantity = parseInt(document.getElementById('restockAmount').value);
 
-            const amountToAdd = parseInt(document.getElementById('restockAmount').value);
-            if (currentRowToRestock && amountToAdd > 0) {
-                const stockCell = currentRowToRestock.cells[2];
-                const threshold = parseInt(currentRowToRestock.cells[3].textContent);
-                
-                const newStock = parseInt(stockCell.textContent) + amountToAdd;
-                
-                
-                stockCell.textContent = newStock;
-                currentRowToRestock.cells[4].innerHTML = getBadgeStatus(newStock, threshold);
+            if (currentRowId && quantity >= 0) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/products/${currentRowId}/stock`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ quantity: quantity }) // Thay thế số lượng tồn kho
+                    });
 
-               
-                restockForm.reset();
-                bootstrap.Modal.getInstance(document.getElementById('restockModal')).hide();
+                    if (response.ok) {
+                        loadProducts(); // Load lại bảng để cập nhật số lượng và Badge mới
+                        bootstrap.Modal.getInstance(document.getElementById('restockModal')).hide();
+                    }
+                } catch (error) {
+                    alert("Cập nhật kho thất bại!");
+                }
             }
         });
     }
 
-    
     const addProductForm = document.getElementById('addProductForm');
     if (addProductForm) {
-        addProductForm.addEventListener('submit', function(event) {
+        addProductForm.addEventListener('submit', async function(event) {
             event.preventDefault();
 
-            const name = document.getElementById('prodName').value;
-            const category = document.getElementById('prodCategory').value;
-            const stock = parseInt(document.getElementById('prodStock').value);
-            const threshold = parseInt(document.getElementById('prodThreshold').value);
+            const productData = {
+                name: document.getElementById('prodName').value,
+                category: document.getElementById('prodCategory').value,
+                price: parseInt(document.getElementById('prodPrice').value || 0), // Thêm Price theo yêu cầu API
+                stock_threshold: parseInt(document.getElementById('prodThreshold').value)
+            };
 
-            const badgeHtml = getBadgeStatus(stock, threshold);
+            try {
+                const response = await fetch(`${API_BASE_URL}/products`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(productData)
+                });
 
-            
-            const newRow = `
-                <tr>
-                    <td>${name}</td>
-                    <td>${category}</td>
-                    <td>${stock}</td>
-                    <td>${threshold}</td>
-                    <td>${badgeHtml}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#productModal">Edit</button>
-                        <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#restockModal">Restock</button>
-                    </td>
-                </tr>
-            `;
-
-            
-            document.getElementById('inventoryTableBody').insertAdjacentHTML('beforeend', newRow);
-
-            
-            addProductForm.reset();
-            bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+                if (response.ok) {
+                    loadProducts();
+                    addProductForm.reset();
+                    bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+                }
+            } catch (error) {
+                alert("Không thể thêm sản phẩm!");
+            }
         });
     }
 
@@ -106,4 +137,6 @@ document.addEventListener('DOMContentLoaded', function() {
         localStorage.removeItem('token');
         window.location.href = 'index.html';
     });
+
+    loadProducts();
 });

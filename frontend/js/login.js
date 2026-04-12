@@ -1,20 +1,36 @@
-document.getElementById('loginForm').addEventListener('submit', function(event) {
+document.getElementById('loginForm').addEventListener('submit', async function(event) {
     event.preventDefault();
 
-    const emailInput = document.getElementById('email').value;
-    const passwordInput = document.getElementById('password').value;
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
     const errorMessage = document.getElementById('errorMessage');
 
-    const demoEmail = "demo";
-    const demoPassword = "demo"; 
-    
-    if (emailInput === demoEmail && passwordInput === demoPassword) {
-        errorMessage.style.display = 'none';
-
-        localStorage.setItem('token', 'fake-jwt-token-for-demo');
+    if (email === "demo" && password === "demo") {
+        localStorage.setItem('token', 'mock-token-for-demo-only');
+        localStorage.setItem('role', 'admin'); 
         window.location.href = 'dashboard.html';
-        
-    } else {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            localStorage.setItem('token', data.token); // Lưu token thật từ server
+            localStorage.setItem('role', data.user.role); // Lưu role thật
+            window.location.href = 'dashboard.html';
+        } else {
+            errorMessage.innerText = data.message || "Invalid email or password!";
+            errorMessage.style.display = 'block';
+        }
+    } catch (error) {
+        errorMessage.innerText = "Server is offline. Please use demo/demo to test.";
         errorMessage.style.display = 'block';
     }
 });

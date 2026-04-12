@@ -1,6 +1,6 @@
 document.getElementById('addBranchForm').addEventListener('submit', function(event) {
     event.preventDefault();
-
+    
     // 1. Get values from the input fields
     const name = document.getElementById('branchName').value;
     const address = document.getElementById('branchAddress').value;

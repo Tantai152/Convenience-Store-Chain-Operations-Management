@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadDashboard(token) {
     try {
-        const response = await fetch('/api/dashboard', {
+        const response = await fetch(`${API_BASE_URL}/dashboard`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -39,10 +39,10 @@ async function loadDashboard(token) {
 
 function updateUI(data) {
     const kpis = {
-        'kpi-stores': data.totalBranches,
-        'kpi-products': data.totalProducts,
-        'kpi-low-stock': data.lowStockItems,
-        'kpi-orders': data.todayOrders
+        'kpi-stores': data.total_stores,
+        'kpi-products': data.total_products,
+        'kpi-low-stock': data.low_stock_count,
+        'kpi-orders': data.today_orders_count
     };
 
     for (const [id, value] of Object.entries(kpis)) {
@@ -50,8 +50,12 @@ function updateUI(data) {
         if (el) el.innerText = value;
     }
 
-    if (data.weeklySales) {
-        renderChart(data.weeklySales);
+    if (data.weekly_sales) {
+        const chartData = {
+            labels: data.weekly_sales.map(s => s.date),
+            data: data.weekly_sales.map(s => s.revenue)
+        };
+        renderChart(chartData); 
     }
 }
 
