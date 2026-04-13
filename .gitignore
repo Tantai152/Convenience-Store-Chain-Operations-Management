@@ -206,5 +206,8 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-node_modules/
+
 .env
+# Backend env (explicit)
+node_modules/
+backend/.env
