@@ -29,6 +29,9 @@ async function loadDashboard(token) {
         if (response.ok) {
             const data = await response.json();
             updateUI(data);
+        } else if (response.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = 'index.html';
         } else {
             useMockData();
         }
@@ -38,11 +41,12 @@ async function loadDashboard(token) {
 }
 
 function updateUI(data) {
+    // map backend keys to UI ids (backend uses camelCase)
     const kpis = {
-        'kpi-stores': data.total_stores,
-        'kpi-products': data.total_products,
-        'kpi-low-stock': data.low_stock_count,
-        'kpi-orders': data.today_orders_count
+        'kpi-stores': data.totalStores ?? data.total_stores ?? 0,
+        'kpi-products': data.totalProducts ?? data.total_products ?? 0,
+        'kpi-low-stock': data.lowStockCount ?? data.low_stock_count ?? 0,
+        'kpi-orders': data.recentOrders ?? data.today_orders_count ?? 0
     };
 
     for (const [id, value] of Object.entries(kpis)) {
@@ -50,12 +54,14 @@ function updateUI(data) {
         if (el) el.innerText = value;
     }
 
-    if (data.weekly_sales) {
+    // backend may return weekly sales arrays under 'weekly_sales' or 'weekly'
+    const weekly = data.weekly_sales || data.weekly || data.weeklySales;
+    if (Array.isArray(weekly)) {
         const chartData = {
-            labels: data.weekly_sales.map(s => s.date),
-            data: data.weekly_sales.map(s => s.revenue)
+            labels: weekly.map(s => s.date),
+            data: weekly.map(s => s.revenue)
         };
-        renderChart(chartData); 
+        renderChart(chartData);
     }
 }
 
