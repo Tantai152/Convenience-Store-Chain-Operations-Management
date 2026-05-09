@@ -1,15 +1,35 @@
 document.addEventListener('DOMContentLoaded', function() {
+    // ============================================
+    // CONFIG - API_BASE_URL từ config.js hoặc fallback
+    // ============================================
+    const API_BASE_URL = (typeof window.API_BASE_URL !== 'undefined') 
+        ? window.API_BASE_URL 
+        : 'http://localhost:3001/api';
+
+    // ============================================
+    // CHECK LOGIN
+    // ============================================
     const token = localStorage.getItem('token');
     if (!token) {
         window.location.href = 'index.html';
         return;
     }
 
+    // ============================================
+    // DOM ELEMENTS
+    // ============================================
     const inventoryTableBody = document.getElementById('inventoryTableBody');
     const searchInput = document.getElementById('searchProduct');
-    let currentRowId = null; 
+    const restockForm = document.getElementById('restockForm');
+    const restockAmount = document.getElementById('restockAmount');
+    const addProductForm = document.getElementById('addProductForm');
+    let currentRowId = null;
 
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
     function getBadgeStatus(status) {
+        if (!status) return '<span class="badge bg-secondary">UNKNOWN</span>';
         const mapping = {
             'ok': 'bg-success',
             'low': 'bg-warning text-dark',
@@ -18,8 +38,12 @@ document.addEventListener('DOMContentLoaded', function() {
         return `<span class="badge ${mapping[status] || 'bg-secondary'}">${status.toUpperCase()}</span>`;
     }
 
+    // ============================================
+    // LOAD PRODUCTS TỪ API
+    // ============================================
     async function loadProducts() {
         try {
+            // Call inventory API on the backend
             const response = await fetch(`${API_BASE_URL}/products`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -27,92 +51,204 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
 
-            if (response.ok) {
-                const products = await response.json();
-                renderTable(products);
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    console.warn('Unauthorized - redirecting to login');
+                    localStorage.removeItem('token');
+                    window.location.href = 'index.html';
+                    return;
+                }
+                let errBody = null;
+                try { errBody = await response.json(); } catch(e) { /* ignore */ }
+                const msg = (errBody && (errBody.error || errBody.message)) 
+                    ? (errBody.error || errBody.message) 
+                    : `HTTP ${response.status}`;
+                throw new Error(msg);
             }
+
+            const data = await response.json();
+            console.log('📦 Products response:', data);
+
+            // Xử lý cả array và object
+            let products = [];
+            if (Array.isArray(data)) {
+                products = data;
+            } else if (data.products) {
+                products = data.products;
+            } else if (data.data) {
+                products = data.data;
+            } else {
+                console.warn('⚠️ Dữ liệu không đúng định dạng:', data);
+            }
+
+            renderTable(products);
         } catch (error) {
-            console.error('Không thể kết nối server:', error);
+            console.error('❌ Không thể kết nối server:', error);
+            if (inventoryTableBody) {
+                inventoryTableBody.innerHTML = `
+                    <tr><td colspan="6" class="text-center text-danger">
+                        ⚠️ Không thể kết nối server: ${String(error.message || error).replace(/</g,'&lt;')}
+                    </td></tr>
+                `;
+            }
         }
     }
 
+    // ============================================
+    // RENDER BẢNG SẢN PHẨM
+    // ============================================
     function renderTable(products) {
+        if (!inventoryTableBody) {
+            console.error('❌ Không tìm thấy element #inventoryTableBody');
+            return;
+        }
+
+        if (!Array.isArray(products) || products.length === 0) {
+            inventoryTableBody.innerHTML = `
+                <tr><td colspan="6" class="text-center">Không có sản phẩm nào</td></tr>
+            `;
+            return;
+        }
+
         inventoryTableBody.innerHTML = products.map(product => `
             <tr data-id="${product.id}">
-                <td>${product.name}</td>
-                <td>${product.category}</td>
-                <td class="fw-bold">${product.current_stock}</td>
-                <td style="display:none">${product.stock_threshold}</td>
-                <td>${getBadgeStatus(product.stock_status)}</td>
+                <td>${product.name || ''}</td>
+                <td>${product.category || 'Chưa phân loại'}</td>
+                <td class="fw-bold">${product.current_stock ?? product.stock ?? 0}</td>
+                <td>${product.threshold ?? product.stock_threshold ?? 0}</td>
+                <td>${getBadgeStatus(product.status || product.stock_status)}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-warning" 
+                    <button class="btn btn-sm btn-outline-warning restock-btn" 
                             data-bs-toggle="modal" 
-                            data-bs-target="#restockModal">Restock</button>
+                            data-bs-target="#restockModal">
+                        📦 Restock
+                    </button>
                 </td>
             </tr>
         `).join('');
     }
 
+    // ============================================
+    // SEARCH FILTER
+    // ============================================
     if (searchInput) {
         searchInput.addEventListener('input', function() {
             const filter = this.value.toLowerCase();
             const rows = document.querySelectorAll('#inventoryTableBody tr');
             rows.forEach(row => {
-                const productName = row.cells[0].textContent.toLowerCase();
-                row.style.display = productName.includes(filter) ? "" : "none";
+                const productName = row.cells[0]?.textContent?.toLowerCase() || '';
+                row.style.display = productName.includes(filter) ? '' : 'none';
             });
         });
     }
 
-    document.getElementById('inventoryTableBody').addEventListener('click', function(e) {
-        if (e.target.classList.contains('btn-outline-warning')) {
-            const row = e.target.closest('tr');
-            currentRowId = row.getAttribute('data-id'); // Lấy ID sản phẩm
-            document.getElementById('restockAmount').value = "";
-        }
-    });
-
-    const restockForm = document.getElementById('restockForm');
-    if (restockForm) {
-        restockForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const quantity = parseInt(document.getElementById('restockAmount').value);
-
-            if (currentRowId && quantity >= 0) {
-                try {
-                    const response = await fetch(`${API_BASE_URL}/products/${currentRowId}/stock`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ quantity: quantity }) // Thay thế số lượng tồn kho
-                    });
-
-                    if (response.ok) {
-                        loadProducts(); // Load lại bảng để cập nhật số lượng và Badge mới
-                        bootstrap.Modal.getInstance(document.getElementById('restockModal')).hide();
-                    }
-                } catch (error) {
-                    alert("Cập nhật kho thất bại!");
+    // ============================================
+    // CLICK RESTOCK BUTTON
+    // ============================================
+    if (inventoryTableBody) {
+        inventoryTableBody.addEventListener('click', function(e) {
+            const restockBtn = e.target.closest('.restock-btn');
+            if (restockBtn) {
+                const row = restockBtn.closest('tr');
+                currentRowId = row.getAttribute('data-id');
+                console.log('📦 Restock cho sản phẩm ID:', currentRowId);
+                if (restockAmount) {
+                    restockAmount.value = '';
                 }
             }
         });
     }
 
-    const addProductForm = document.getElementById('addProductForm');
+    // ============================================
+    // FORM RESTOCK (Nhập kho)
+    // ============================================
+    if (restockForm && restockAmount) {
+    restockForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const quantity = parseInt(restockAmount.value);
+
+        if (!currentRowId) {
+            alert('Vui lòng chọn sản phẩm để nhập kho!');
+            return;
+        }
+
+        if (isNaN(quantity) || quantity < 0) {
+            alert('Vui lòng nhập số lượng hợp lệ!');
+            return;
+        }
+
+        try {
+            const url = `${API_BASE_URL}/inventory/products/${currentRowId}/stock`;
+            console.log('🔧 Gọi API:', url);
+            console.log('🔧 Token:', token?.substring(0, 30) + '...');
+            console.log('🔧 Quantity:', quantity);
+
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ quantity: quantity })
+            });
+
+            console.log('🔧 Status:', response.status);
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Restock thành công:', data);
+                loadProducts();
+                const modal = bootstrap.Modal.getInstance(document.getElementById('restockModal'));
+                if (modal) modal.hide();
+                alert('✅ Cập nhật kho thành công!');
+            } else {
+                const err = await response.json();
+                console.error('❌ Server error:', err);
+                alert('❌ Lỗi: ' + (err.message || err.error || 'Không thể cập nhật kho'));
+            }
+        } catch (error) {
+            console.error('❌ Lỗi restock:', error);
+            alert('❌ Cập nhật kho thất bại! Xem Console (F12) để biết chi tiết.');
+        }
+    });
+    } else {
+        console.warn('⚠️ Không tìm thấy form #restockForm hoặc input #restockAmount');
+    }
+
+    // ============================================
+    // FORM THÊM SẢN PHẨM MỚI
+    // ============================================
     if (addProductForm) {
         addProductForm.addEventListener('submit', async function(event) {
             event.preventDefault();
 
+            const prodName = document.getElementById('prodName');
+            const prodCategory = document.getElementById('prodCategory');
+            const prodStock = document.getElementById('prodStock');
+            const prodThreshold = document.getElementById('prodThreshold');
+
+            // 🔧 SỬA: Bỏ kiểm tra prodPrice (không tồn tại)
+            if (!prodName) {
+                alert('Không tìm thấy form fields!');
+                return;
+            }
+
             const productData = {
-                name: document.getElementById('prodName').value,
-                category: document.getElementById('prodCategory').value,
-                price: parseInt(document.getElementById('prodPrice').value || 0), // Thêm Price theo yêu cầu API
-                stock_threshold: parseInt(document.getElementById('prodThreshold').value)
+                name: prodName.value.trim(),
+                category: prodCategory?.value?.trim() || 'Chưa phân loại',
+                price: 1000,  // Giá mặc định
+                threshold: parseInt(prodThreshold?.value || 10),
+                current_stock: parseInt(prodStock?.value || 0)
             };
 
+            if (!productData.name) {
+                alert('Vui lòng nhập tên sản phẩm!');
+                return;
+            }
+
             try {
+                // POST new product to inventory API
                 const response = await fetch(`${API_BASE_URL}/products`, {
                     method: 'POST',
                     headers: {
@@ -125,18 +261,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (response.ok) {
                     loadProducts();
                     addProductForm.reset();
-                    bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('productModal'));
+                    if (modal) modal.hide();
+                } else {
+                    const err = await response.json();
+                    alert('Lỗi: ' + (err.message || 'Không thể thêm sản phẩm'));
                 }
             } catch (error) {
-                alert("Không thể thêm sản phẩm!");
+                console.error('❌ Lỗi thêm sản phẩm:', error);
+                alert('Không thể thêm sản phẩm! Kiểm tra kết nối server.');
             }
         });
     }
 
+    // ============================================
+    // LOGOUT
+    // ============================================
     document.getElementById('logoutBtn')?.addEventListener('click', function() {
         localStorage.removeItem('token');
         window.location.href = 'index.html';
     });
 
+    // ============================================
+    // LOAD INITIAL DATA
+    // ============================================
     loadProducts();
 });
