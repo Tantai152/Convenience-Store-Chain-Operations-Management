@@ -1,36 +1,47 @@
-document.getElementById('addBranchForm').addEventListener('submit', function(event) {
-    event.preventDefault();
-    
-    // 1. Get values from the input fields
-    const name = document.getElementById('branchName').value;
-    const address = document.getElementById('branchAddress').value;
-    const manager = document.getElementById('branchManager').value;
+document.addEventListener('DOMContentLoaded', () => {
+    const token = localStorage.getItem('token');
+    if (!token) return window.location.href = 'index.html';
 
-    // 2. Get the table body where we will add the new row
     const tableBody = document.getElementById('branchTableBody');
 
-    // 3. Create a new HTML row using template literals
-    const newRow = `
-        <tr>
-            <td>${name}</td>
-            <td>${address}</td>
-            <td>${manager}</td>
-            <td><span class="badge bg-success">Active</span></td>
-            <td>
-                <button class="btn btn-sm btn-outline-primary">Edit</button>
-                <button class="btn btn-sm btn-outline-danger">Deactivate</button>
-            </td>
-        </tr>
-    `;
+    async function loadBranches() {
+        try {
+            const res = await fetch(`${API_BASE_URL}/stores`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const json = await res.json();
+            const list = json.stores || json;
+            tableBody.innerHTML = list.map(s => `
+                <tr>
+                    <td>${s.name}</td>
+                    <td>${s.address || ''}</td>
+                    <td>${s.manager || ''}</td>
+                    <td>${s.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Disabled</span>'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger">Deactivate</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (e) {
+            console.error('Failed to load branches', e);
+        }
+    }
 
-    // 4. Append the new row to the existing table content
-    tableBody.innerHTML += newRow;
+    document.getElementById('addBranchForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const name = document.getElementById('branchName').value;
+        const address = document.getElementById('branchAddress').value;
+        const manager = document.getElementById('branchManager').value;
+        try {
+            const res = await fetch(`${API_BASE_URL}/branches`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ name, address, manager }) });
+            if (res.ok) {
+                await loadBranches();
+                document.getElementById('addBranchForm').reset();
+                bootstrap.Modal.getInstance(document.getElementById('branchModal')).hide();
+            } else {
+                const err = await res.json(); alert(err.message || err.error || 'Failed to create branch');
+            }
+        } catch (e) { console.error(e); alert('Failed to create branch'); }
+    });
 
-    // 5. Clear the form inputs after successful submission
-    document.getElementById('addBranchForm').reset();
-
-    // 6. Close the Bootstrap modal programmatically
-    const modalElement = document.getElementById('branchModal');
-    const modalInstance = bootstrap.Modal.getInstance(modalElement);
-    modalInstance.hide();
+    loadBranches();
 });
