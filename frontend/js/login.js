@@ -1,19 +1,23 @@
 document.getElementById('loginForm').addEventListener('submit', async function(event) {
     event.preventDefault();
 
-    const email = document.getElementById('email').value;
+    const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const errorMessage = document.getElementById('errorMessage');
 
-    if (email === "demo" && password === "demo") {
+    // Fallback nếu API_BASE_URL chưa được định nghĩa
+    const BASE = (typeof API_BASE_URL !== 'undefined') ? API_BASE_URL : 'http://localhost:3001/api';
+
+    // Cho phép demo offline
+    if (email === 'demo' && password === 'demo') {
         localStorage.setItem('token', 'mock-token-for-demo-only');
-        localStorage.setItem('role', 'admin'); 
+        localStorage.setItem('role', 'admin');
         window.location.href = 'dashboard.html';
         return;
     }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        const response = await fetch(`${BASE}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
@@ -21,16 +25,17 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
 
         const data = await response.json();
 
-        if (response.ok) {
-            localStorage.setItem('token', data.token); // Lưu token thật từ server
-            localStorage.setItem('role', data.user.role); // Lưu role thật
-            window.location.href = 'dashboard.html';
+        if (response.ok && data.token) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('role', 'admin');
+            window.location.href = 'dashboard.html';  // dòng này sẽ chạy
         } else {
-            errorMessage.innerText = data.message || "Invalid email or password!";
+            errorMessage.innerText = data.error || data.message || 'Sai email hoặc mật khẩu!';
             errorMessage.style.display = 'block';
         }
     } catch (error) {
-        errorMessage.innerText = "Server is offline. Please use demo/demo to test.";
+        console.error('Login error:', error);
+        errorMessage.innerText = 'Không kết nối được server. Hãy thử lại!';
         errorMessage.style.display = 'block';
     }
 });

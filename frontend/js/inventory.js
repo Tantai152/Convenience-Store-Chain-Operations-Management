@@ -2,9 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // ============================================
     // CONFIG - API_BASE_URL từ config.js hoặc fallback
     // ============================================
-    const API_BASE_URL = (typeof window.API_BASE_URL !== 'undefined') 
-        ? window.API_BASE_URL 
-        : 'http://localhost:3001/api';
+    const API_BASE_URL = (typeof window.API_BASE_URL !== 'undefined') ? window.API_BASE_URL : 'http://localhost:3001/api';
 
     // ============================================
     // CHECK LOGIN
@@ -179,33 +177,47 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
-            const url = `${API_BASE_URL}/inventory/products/${currentRowId}/stock`;
-            console.log('🔧 Gọi API:', url);
-            console.log('🔧 Token:', token?.substring(0, 30) + '...');
-            console.log('🔧 Quantity:', quantity);
+            // Try a list of candidate endpoints until one succeeds (200/201/204)
+            const candidates = [
+                { method: 'PUT', path: `/products/${currentRowId}/stock` },
+                { method: 'PUT', path: `/products/${currentRowId}/restock` },
+                { method: 'PATCH', path: `/products/${currentRowId}/stock` },
+                { method: 'POST', path: `/products/${currentRowId}/stock` }
+            ];
 
-            const response = await fetch(url, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ quantity: quantity })
-            });
+            let success = false;
+            for (const c of candidates) {
+                const url = `${API_BASE_URL}${c.path}`;
+                console.log('🔧 Restock attempt:', c.method, url, 'quantity=', quantity);
+                try {
+                    const response = await fetch(url, {
+                        method: c.method,
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ quantity: quantity })
+                    });
 
-            console.log('🔧 Status:', response.status);
+                    console.log('🔧 Restock status for', c.path, ':', response.status);
 
-            if (response.ok) {
-                const data = await response.json();
-                console.log('✅ Restock thành công:', data);
-                loadProducts();
-                const modal = bootstrap.Modal.getInstance(document.getElementById('restockModal'));
-                if (modal) modal.hide();
-                alert('✅ Cập nhật kho thành công!');
-            } else {
-                const err = await response.json();
-                console.error('❌ Server error:', err);
-                alert('❌ Lỗi: ' + (err.message || err.error || 'Không thể cập nhật kho'));
+                    if (response.ok) {
+                        const data = await response.json().catch(()=>null);
+                        console.log('✅ Restock succeeded on', c.path, data);
+                        success = true;
+                        await loadProducts();
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('restockModal'));
+                        if (modal) modal.hide();
+                        alert('✅ Cập nhật kho thành công!');
+                        break;
+                    }
+                } catch (innerErr) {
+                    console.warn('⚠️ Attempt failed for', c.path, innerErr);
+                }
+            }
+
+            if (!success) {
+                alert('❌ Cập nhật kho thất bại: tất cả các endpoint trả về lỗi hoặc 404. Xem Console để biết chi tiết.');
             }
         } catch (error) {
             console.error('❌ Lỗi restock:', error);

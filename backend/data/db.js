@@ -55,3 +55,18 @@ module.exports = {
   employees,
   orders,
 };
+
+// saveData is a no-op in this demo (keeps API calls compatible with code that expects persistence)
+module.exports.saveData = function(updated) {
+  // In a real app we'd persist to disk or DB. Here we simply merge keys for compatibility.
+  if (!updated || typeof updated !== 'object') return;
+  Object.keys(updated).forEach(k => {
+    if (module.exports[k] && Array.isArray(module.exports[k]) && Array.isArray(updated[k])) {
+      // replace array contents
+      module.exports[k].length = 0;
+      updated[k].forEach(item => module.exports[k].push(item));
+    } else {
+      module.exports[k] = updated[k];
+    }
+  });
+};

@@ -35,14 +35,12 @@ try {
     console.log('✅ Auth routes loaded');
 } catch (err) { console.warn('⚠️ Auth routes not found'); }
 
-// Employee Routes (mount TRƯỚC api.js)
 try {
     const emp = require('./routes/employees');
     app.use('/api', emp);
     console.log('✅ Employee routes loaded');
 } catch(e) { console.warn('⚠️ Employee routes not found'); }
 
-// Inventory Routes (mount TRƯỚC api.js)
 try {
     const inv = require('./routes/inventory');
     app.use('/api', inv);
@@ -52,14 +50,14 @@ try {
 // Order Routes
 try {
     const ord = require('./routes/orders');
-    app.use('/api', ord);
+    app.use('/api/orders', ord);
     console.log('✅ Order routes loaded');
 } catch(e) { console.warn('⚠️ Order routes not found'); }
 
 // Sales Routes
 try {
     const sales = require('./routes/sales');
-    app.use('/api', sales);
+    app.use('/api/sales', sales);
     console.log('✅ Sales routes loaded');
 } catch(e) { console.warn('⚠️ Sales routes not found'); }
 

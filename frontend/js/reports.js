@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', function() {
+    const API_BASE_URL = (typeof window.API_BASE_URL !== 'undefined') ? window.API_BASE_URL : 'http://localhost:3001/api';
     const token = localStorage.getItem('token');
     if (!token) {
         window.location.href = 'index.html';
@@ -8,10 +9,16 @@ document.addEventListener('DOMContentLoaded', function() {
     let reportChart = null;
 
     // Fetch sales data from backend
+    async function doFetch(path, opts={}){
+        opts.headers = Object.assign({ 'Authorization': `Bearer ${token}` }, opts.headers || {});
+        const res = await fetch(`${API_BASE_URL}${path}`, opts);
+        if (res.status === 401) { localStorage.removeItem('token'); window.location.href = 'index.html'; throw new Error('unauthorized'); }
+        return res;
+    }
+
     async function fetchSales(period='daily') {
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${API_BASE_URL}/sales?period=${period}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await doFetch(`/sales?period=${period}`);
             if (!res.ok) throw new Error('Failed to fetch sales');
             const data = await res.json();
             return data;
