@@ -106,11 +106,8 @@ router.delete('/branches/:id', authenticate, requireAdmin, (req, res) => {
 // ============================================
 
 router.get('/stores', (req, res) => res.json({ stores }));
-router.get('/products', (req, res) => {
-    // Return enriched products from in-memory db so frontend can show stock/threshold/status
-    const list = (products || []).map(p => ({ ...p, status: computeStatus(p) }));
-    res.json(list);
-});
+// NOTE: product CRUD and listing are handled in routes/inventory.js mounted at /api/products.
+// Keep api.js focused on branches, dashboard and store-level helpers to avoid duplicate endpoints.
 
 router.get('/dashboard', authenticate, (req, res) => {
     res.json({

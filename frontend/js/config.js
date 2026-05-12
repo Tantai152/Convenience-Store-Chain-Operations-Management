@@ -2,4 +2,4 @@
 const API_URL = 'http://localhost:3001';
 
 // Full API base used by frontend code (keeps /api path for compatibility)
-const API_BASE_URL = API_URL + '/api';
+const API_BASE_URL = 'http://localhost:3001/api';
