@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 async function loadDashboard(token) {
+    const API_BASE_URL = (typeof window.API_BASE_URL !== 'undefined') ? window.API_BASE_URL : 'http://localhost:3001/api';
     try {
         const response = await fetch(`${API_BASE_URL}/dashboard`, {
             method: 'GET',
@@ -42,7 +43,6 @@ async function loadDashboard(token) {
 }
 
 function updateUI(data) {
-    // map backend keys to UI ids (backend uses camelCase)
     const kpis = {
         'kpi-stores': data.totalStores ?? data.total_stores ?? 0,
         'kpi-products': data.totalProducts ?? data.total_products ?? 0,
@@ -55,12 +55,12 @@ function updateUI(data) {
         if (el) el.innerText = value;
     }
 
-    // backend may return weekly sales arrays under 'weekly_sales' or 'weekly'
+    // ✅ FIX: nhận đúng key từ cả API lẫn mockData
     const weekly = data.weekly_sales || data.weekly || data.weeklySales;
     if (Array.isArray(weekly)) {
         const chartData = {
-            labels: weekly.map(s => s.date),
-            data: weekly.map(s => s.revenue)
+            labels: weekly.map(s => s.date),    // ✅ dùng .date
+            data: weekly.map(s => s.revenue)    // ✅ dùng .revenue
         };
         renderChart(chartData);
     }
@@ -68,21 +68,26 @@ function updateUI(data) {
 
 function useMockData() {
     const mockData = {
-        totalBranches: 12,
-        totalProducts: 450,
-        lowStockItems: 8,
-        todayOrders: 124,
-        weeklySales: [
-            {day: 'Mon', sales: 1200}, {day: 'Tue', sales: 1900}, 
-            {day: 'Wed', sales: 1500}, {day: 'Thu', sales: 2100}, 
-            {day: 'Fri', sales: 2800}, {day: 'Sat', sales: 3500}, 
-            {day: 'Sun', sales: 3100}
+        // ✅ FIX: đúng key để updateUI map được vào KPI cards
+        totalStores: 5,
+        totalProducts: 12,
+        lowStockCount: 7,
+        today_orders_count: 23,
+        // ✅ FIX: dùng weekly_sales + date + revenue cho nhất quán
+        weekly_sales: [
+            { date: 'Mon', revenue: 1200 },
+            { date: 'Tue', revenue: 1900 },
+            { date: 'Wed', revenue: 1500 },
+            { date: 'Thu', revenue: 2100 },
+            { date: 'Fri', revenue: 2800 },
+            { date: 'Sat', revenue: 3500 },
+            { date: 'Sun', revenue: 3100 }
         ]
     };
     updateUI(mockData);
 }
 
-function renderChart(weeklySales) {
+function renderChart(chartData) {
     const ctx = document.getElementById('revenueBarChart');
     if (!ctx) return;
 
@@ -90,13 +95,14 @@ function renderChart(weeklySales) {
         window.myChart.destroy();
     }
 
+    // ✅ FIX: nhận { labels, data } thay vì array weeklySales
     window.myChart = new Chart(ctx.getContext('2d'), {
         type: 'bar',
         data: {
-            labels: weeklySales.map(item => item.day),
+            labels: chartData.labels,
             datasets: [{
                 label: 'Revenue ($)',
-                data: weeklySales.map(item => item.sales),
+                data: chartData.data,
                 backgroundColor: 'rgba(13, 110, 253, 0.8)',
                 borderRadius: 6
             }]

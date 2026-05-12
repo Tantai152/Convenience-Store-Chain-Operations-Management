@@ -7,8 +7,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const branchModalEl = document.getElementById('branchModal');
     let editingId = null;
 
+    // Lưu data thực từ API vào đây, không đọc từ DOM nữa
+    let branchData = [];
+
     async function doFetch(path, opts = {}) {
-        opts.headers = Object.assign({ 'Authorization': `Bearer ${token}` }, opts.headers || {});
+        opts.headers = Object.assign({
+            'Authorization': `Bearer ${token}`,
+            // ✅ Tắt cache hoàn toàn để tránh 304
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        }, opts.headers || {});
         const res = await fetch(`${API_BASE_URL}${path}`, opts);
         if (res.status === 401) {
             localStorage.removeItem('token');
@@ -22,69 +30,84 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await doFetch('/branches');
             const json = await res.json();
-            const list = Array.isArray(json) ? json : (json.branches || []);
-
-            if (list.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No branches found.</td></tr>';
-                return;
-            }
-
-            tableBody.innerHTML = list.map(b => {
-                const isActive = b.status === 'active';
-                return `
-                <tr data-id="${b.id}" data-status="${b.status}" class="${isActive ? '' : 'table-secondary'}">
-                    <td>${b.name}</td>
-                    <td>${b.address || ''}</td>
-                    <td>${b.manager || '-'}</td>
-                    <td>
-                        <span class="badge ${isActive ? 'bg-success' : 'bg-secondary'}">
-                            ${isActive ? 'Active' : 'Disabled'}
-                        </span>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary me-1"
-                                onclick="openEditModal(${b.id})">Edit</button>
-                        <button class="btn btn-sm ${isActive ? 'btn-outline-danger' : 'btn-outline-success'}"
-                                onclick="toggleBranch(${b.id}, '${b.status}')">
-                            ${isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                    </td>
-                </tr>`;
-            }).join('');
+            branchData = Array.isArray(json) ? json : (json.branches || []);
+            renderTable();
         } catch (e) {
             if (e.message !== 'unauthorized') console.error('Failed to load branches', e);
         }
     }
 
-    // ✅ Cả Activate lẫn Deactivate đều dùng PUT /branches/:id với { status }
-    // Không cần PATCH /restore nữa — tránh lỗi endpoint not found
-    window.toggleBranch = async function (id, currentStatus) {
-        const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    function renderTable() {
+        if (branchData.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No branches found.</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = branchData.map(b => {
+            const isActive = b.status === 'active';
+            return `
+            <tr data-id="${b.id}" class="${isActive ? '' : 'table-secondary'}">
+                <td>${b.name}</td>
+                <td>${b.address || ''}</td>
+                <td>${b.manager || '-'}</td>
+                <td>
+                    <span class="badge ${isActive ? 'bg-success' : 'bg-secondary'}">
+                        ${isActive ? 'Active' : 'Disabled'}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary me-1"
+                            onclick="openEditModal(${b.id})">Edit</button>
+                    <button class="btn btn-sm ${isActive ? 'btn-outline-danger' : 'btn-outline-success'}"
+                            onclick="toggleBranch(${b.id})">
+                        ${isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ✅ Đọc status từ branchData (in-memory), không đọc từ DOM attribute
+    // Tránh hoàn toàn vấn đề stale data-status trên HTML
+    window.toggleBranch = async function (id) {
+        const branch = branchData.find(b => b.id === id);
+        if (!branch) return;
+
+        const newStatus = branch.status === 'active' ? 'inactive' : 'active';
+        console.log(`Toggle branch ${id}: ${branch.status} → ${newStatus}`);
+
         try {
             const res = await doFetch(`/branches/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })
             });
+
+            console.log('Toggle response status:', res.status);
+
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 alert(err.message || 'Failed to update branch status');
                 return;
             }
-            await loadBranches();
+
+            // ✅ Cập nhật local data ngay, không cần gọi API lại
+            branch.status = newStatus;
+            renderTable();
         } catch (err) {
             if (err.message !== 'unauthorized') console.error(err);
         }
     };
 
     window.openEditModal = function (id) {
-        const row = document.querySelector(`tr[data-id="${id}"]`);
-        if (!row) return;
+        const branch = branchData.find(b => b.id === id);
+        if (!branch) return;
         editingId = id;
-        document.getElementById('branchName').value    = row.cells[0].textContent.trim();
-        document.getElementById('branchAddress').value = row.cells[1].textContent.trim();
-        document.getElementById('branchManager').value = row.cells[2].textContent.trim();
+        document.getElementById('branchName').value    = branch.name;
+        document.getElementById('branchAddress').value = branch.address || '';
+        document.getElementById('branchManager').value = branch.manager || '';
         document.getElementById('branchModalLabel').textContent = 'Edit Branch';
+
         const existing = bootstrap.Modal.getInstance(branchModalEl);
         if (existing) existing.dispose();
         new bootstrap.Modal(branchModalEl).show();
@@ -95,21 +118,27 @@ document.addEventListener('DOMContentLoaded', () => {
         const name    = document.getElementById('branchName').value.trim();
         const address = document.getElementById('branchAddress').value.trim();
         const manager = document.getElementById('branchManager').value.trim();
+
         try {
             const res = await doFetch(editingId ? `/branches/${editingId}` : '/branches', {
                 method: editingId ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, address, manager })
             });
+
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 alert(err.message || 'Failed to save branch');
                 return;
             }
+
             bootstrap.Modal.getInstance(branchModalEl)?.hide();
             await loadBranches();
         } catch (e) {
-            if (e.message !== 'unauthorized') { console.error(e); alert('Failed to save branch'); }
+            if (e.message !== 'unauthorized') {
+                console.error(e);
+                alert('Failed to save branch');
+            }
         }
     });
 
@@ -125,4 +154,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     loadBranches();
-}); 
+});

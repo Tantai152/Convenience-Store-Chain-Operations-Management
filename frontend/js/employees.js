@@ -1,148 +1,219 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     const API_BASE_URL = (typeof window.API_BASE_URL !== 'undefined') ? window.API_BASE_URL : 'http://localhost:3001/api';
     const token = localStorage.getItem('token');
-    if (!token) {
-        window.location.href = 'index.html';
-        return;
-    }
+    if (!token) { window.location.href = 'index.html'; return; }
 
     const tableBody = document.getElementById('employeeTableBody');
-    const modalTitle = document.getElementById('modalTitle');
+    const employeeModalEl = document.getElementById('employeeModal');
     const employeeForm = document.getElementById('addEmployeeForm');
     const filterStore = document.getElementById('filterStore');
 
-    async function doFetch(path, opts={}) {
-        opts.headers = Object.assign({ 'Authorization': `Bearer ${token}` }, opts.headers || {});
+    // ✅ Lưu data vào memory, không đọc từ DOM
+    let employeeData = [];
+    let editingId = null;
+
+    async function doFetch(path, opts = {}) {
+        opts.headers = Object.assign({
+            'Authorization': `Bearer ${token}`,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        }, opts.headers || {});
         const res = await fetch(`${API_BASE_URL}${path}`, opts);
-        if (res.status === 401) { localStorage.removeItem('token'); window.location.href = 'index.html'; throw new Error('unauthorized'); }
+        if (res.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = 'index.html';
+            throw new Error('unauthorized');
+        }
         return res;
     }
 
     async function loadEmployees() {
-        try {
-            const res = await doFetch('/employees');
-            const data = await res.json();
-            const list = Array.isArray(data) ? data : (data.employees || []);
-            tableBody.innerHTML = list.map(e => `
-                <tr data-id="${e.id}" class="${e.is_active ? '' : 'table-secondary'}">
-                    <td>${e.full_name}</td>
-                    <td>${e.role}</td>
-                    <td>${e.store_name || ''}</td>
-                    <td>${e.shift || ''}</td>
-                    <td>
-                        <span class="badge ${e.is_active ? 'bg-success' : 'bg-secondary'}">
-                            ${e.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="openEditEmployee(${e.id})">Edit</button>
-                        <button class="btn btn-sm ${e.is_active ? 'btn-outline-danger' : 'btn-outline-success'}" onclick="toggleEmployee(${e.id}, ${e.is_active})">
-                            ${e.is_active ? 'Deactivate' : 'Activate'}
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-        } catch (e) { console.error('loadEmployees failed', e); }
+    try {
+        const res = await doFetch('/employees');
+        if (!res.ok) {
+            console.error('loadEmployees error:', res.status);
+            return; // ← giữ nguyên employeeData, không xóa
+        }
+        const data = await res.json();
+        employeeData = Array.isArray(data) ? data : (data.employees || []);
+        renderTable();
+    } catch (e) {
+        if (e.message !== 'unauthorized') console.error('loadEmployees failed', e);
+    }
+}
+
+    function renderTable() {
+        const filterVal = filterStore ? filterStore.value : 'all';
+        const filtered = filterVal === 'all'
+            ? employeeData
+            : employeeData.filter(e => e.store_name === filterVal);
+
+        if (filtered.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No employees found.</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = filtered.map(e => {
+            const isActive = e.is_active === true;
+            return `
+            <tr data-id="${e.id}" class="${isActive ? '' : 'table-secondary'}">
+                <td>${e.full_name}</td>
+                <td>${e.role}</td>
+                <td>${e.store_name || '-'}</td>
+                <td>${e.shift || '-'}</td>
+                <td>
+                    <span class="badge ${isActive ? 'bg-success' : 'bg-secondary'}">
+                        ${isActive ? 'Active' : 'Inactive'}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-secondary me-1"
+                            onclick="openEditEmployee(${e.id})">Edit</button>
+                    <button class="btn btn-sm ${isActive ? 'btn-outline-danger' : 'btn-outline-success'}"
+                            onclick="toggleEmployee(${e.id})">
+                        ${isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                </td>
+            </tr>`;
+        }).join('');
     }
 
     async function loadStores() {
         try {
-            const res = await fetch(`${API_BASE_URL}/stores`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await doFetch('/stores');
             const json = await res.json();
-            const list = json.stores || json;
+            const list = json.stores || (Array.isArray(json) ? json : []);
             if (filterStore) {
-                filterStore.innerHTML = ['<option value="all">All</option>'].concat(list.map(s => `<option value="${s.name}">${s.name}</option>`)).join('');
+                filterStore.innerHTML = '<option value="all">All Stores</option>'
+                    + list.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
             }
-        } catch(e) { console.error('loadStores failed', e); }
+            // Cập nhật dropdown store trong modal
+            const empStore = document.getElementById('empStore');
+            if (empStore) {
+                empStore.innerHTML = list.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+            }
+        } catch (e) { console.error('loadStores failed', e); }
     }
 
-    document.getElementById('filterStore').addEventListener('change', function() {
-        const selectedStore = this.value;
-        const rows = tableBody.querySelectorAll('tr');
-        rows.forEach(row => {
-            const storeInRow = row.cells[2].textContent;
-            row.style.display = (selectedStore === 'all' || storeInRow === selectedStore) ? "" : "none";
-        });
-    });
-
-    tableBody.addEventListener('click', async function(e) {
-        const row = e.target.closest('tr');
-        if (!row) return;
-        const id = row.getAttribute('data-id');
-        const statusCell = row.cells[4];
-
-        // Toggle Active/Inactive
-        if (e.target.classList.contains('toggle-btn')) {
-            const isActive = statusCell.textContent.trim() === 'Active';
-            try {
-                const res = await doFetch(`/employees/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !isActive }) });
-                if (res.ok) {
-                    loadEmployees();
-                }
-            } catch (err) { console.error(err); }
-        }
-
-        // Edit button
-        if (e.target.classList.contains('edit-btn') || e.target.innerText === 'Edit') {
-            modalTitle.innerText = "Edit Employee Information";
-            document.getElementById('empName').value = row.cells[0].textContent;
-            document.getElementById('empRole').value = row.cells[1].textContent.trim();
-            document.getElementById('empStore').value = row.cells[2].textContent;
-            document.getElementById('empShift').value = row.cells[3].textContent;
-        }
-    });
-
-    document.querySelector('[data-bs-target="#employeeModal"]').addEventListener('click', () => {
-        modalTitle.innerText = "Add New Employee";
-        employeeForm.reset();
-    });
-
-    async function createEmployee(formData) {
-        // Create employee WITHOUT Authorization header as requested
-        const res = await fetch(`${API_BASE_URL}/employees`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
-        const data = await res.json();
-        console.log('Create employee response:', res.status, data);
-        if (!res.ok) throw new Error(data.message || 'Failed to create');
-        await loadEmployees();
+    // Filter theo store — re-render từ memory, không reload API
+    if (filterStore) {
+        filterStore.addEventListener('change', renderTable);
     }
 
-    employeeForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const full_name = document.getElementById('empName').value;
-        const role = document.getElementById('empRole').value;
-        const store_name = document.getElementById('empStore').value;
-        const shift = document.getElementById('empShift').value;
-            try {
-                await createEmployee({ full_name, email: full_name.replace(/\s+/g,'.').toLowerCase()+'@cschain.vn', role, store_name, shift });
-                bootstrap.Modal.getInstance(document.getElementById('employeeModal')).hide();
-            } catch (err) { console.error(err); alert('Failed to create employee'); }
-    });
+    // ✅ Toggle: đọc từ employeeData (memory), không từ DOM
+    window.toggleEmployee = async function (id) {
+        const emp = employeeData.find(e => e.id === id);
+        if (!emp) return;
 
-    // Expose functions for inline onclick handlers
-    window.openEditEmployee = function(id) {
-        const row = document.querySelector(`tr[data-id="${id}"]`);
-        if (!row) return;
-        document.getElementById('empName').value = row.cells[0].textContent;
-        document.getElementById('empRole').value = row.cells[1].textContent.trim();
-        document.getElementById('empStore').value = row.cells[2].textContent;
-        document.getElementById('empShift').value = row.cells[3].textContent;
-        bootstrap.Modal.getInstance(document.getElementById('employeeModal')) || new bootstrap.Modal(document.getElementById('employeeModal'));
-        const modal = new bootstrap.Modal(document.getElementById('employeeModal'));
-        modal.show();
-    };
+        const newStatus = !emp.is_active;
+        console.log(`Toggle employee ${id}: ${emp.is_active} → ${newStatus}`);
 
-    window.toggleEmployee = async function(id, isActive) {
         try {
-            const res = await doFetch(`/employees/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !isActive }) });
-            if (res.ok) await loadEmployees();
-        } catch (err) { console.error(err); }
+            const res = await doFetch(`/employees/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: newStatus })
+            });
+
+            console.log('Toggle response:', res.status);
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                alert(err.message || 'Failed to update employee status');
+                return;
+            }
+
+            // ✅ Cập nhật local data ngay
+            emp.is_active = newStatus;
+            renderTable();
+        } catch (err) {
+            if (err.message !== 'unauthorized') console.error(err);
+        }
     };
 
-    loadStores();
-    loadEmployees();
+    // ✅ Mở modal edit — đọc từ memory
+    window.openEditEmployee = function (id) {
+        const emp = employeeData.find(e => e.id === id);
+        if (!emp) return;
+        editingId = id;
 
-    document.getElementById('logoutBtn').addEventListener('click', () => {
+        document.getElementById('empName').value  = emp.full_name;
+        document.getElementById('empRole').value  = emp.role;
+        document.getElementById('empShift').value = emp.shift || 'morning';
+        document.getElementById('empStore').value = emp.store_name || '';
+
+        const titleEl = employeeModalEl.querySelector('.modal-title');
+        if (titleEl) titleEl.textContent = 'Edit Employee';
+
+        const existing = bootstrap.Modal.getInstance(employeeModalEl);
+        if (existing) existing.dispose();
+        new bootstrap.Modal(employeeModalEl).show();
+    };
+
+    // Reset khi mở modal Add
+    document.querySelector('[data-bs-target="#employeeModal"]')?.addEventListener('click', () => {
+        editingId = null;
+        employeeForm.reset();
+        const titleEl = employeeModalEl.querySelector('.modal-title');
+        if (titleEl) titleEl.textContent = 'Add New Employee';
+    });
+
+    // Reset khi đóng modal
+    employeeModalEl.addEventListener('hidden.bs.modal', () => {
+        editingId = null;
+        employeeForm.reset();
+        const titleEl = employeeModalEl.querySelector('.modal-title');
+        if (titleEl) titleEl.textContent = 'Add New Employee';
+    });
+
+    // Submit form Add / Edit
+    employeeForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const full_name  = document.getElementById('empName').value.trim();
+        const role       = document.getElementById('empRole').value.toLowerCase(); // ✅ lowercase
+        const store_name = document.getElementById('empStore').value.trim();
+        const shift      = document.getElementById('empShift').value.toLowerCase();
+        const email      = full_name.replace(/\s+/g, '.').toLowerCase() + '@cschain.vn';
+
+        try {
+            let res;
+            if (editingId) {
+                // Edit: cần auth
+                res = await doFetch(`/employees/${editingId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name, role, store_name, shift })
+                });
+            } else {
+                // Create: không cần auth header
+                res = await fetch(`${API_BASE_URL}/employees`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name, email, role, store_name, shift })
+                });
+            }
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                alert(err.message || 'Failed to save employee');
+                return;
+            }
+
+            bootstrap.Modal.getInstance(employeeModalEl)?.hide();
+            await loadEmployees();
+        } catch (err) {
+            if (err.message !== 'unauthorized') {
+                console.error(err);
+                alert('Failed to save employee');
+            }
+        }
+    });
+
+    document.getElementById('logoutBtn')?.addEventListener('click', () => {
         localStorage.removeItem('token');
         window.location.href = 'index.html';
     });
+
+    loadStores();
+    loadEmployees();
 });
